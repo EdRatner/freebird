@@ -2,6 +2,8 @@ const path = require("path");
 const express = require("express");
 const app = express();
 
+const migration_manager = require("./migration-manager.js");
+
 const http = require("http");
 const server = http.createServer(app);
 
