@@ -5,15 +5,11 @@
 <title>Global Flight Path Explorer</title>
 <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.16.0/mapbox-gl.css" rel="stylesheet">
+<link href="./output.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.16.0/mapbox-gl.js"></script>
 <style>
   body { margin: 0; padding: 0; }
   #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-  #controls {
-    position: absolute; top: 10px; left: 10px; background: #fff; padding: 12px;
-    z-index: 2; border-radius: 8px; box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
-    width: 360px; max-height: 92vh; overflow-y: auto; font-family: system-ui, sans-serif;
-  }
   #flight-list { margin-top: 12px; }
   .route-link { cursor: pointer; color: #0a66c2; text-decoration: underline; }
   #toggleAll, #loadBtn, #modeBtn { margin-top: 10px; }
@@ -23,26 +19,26 @@
 </head>
 <body>
 <div id="map"></div>
-<div id="controls">
+<div id="controls" class="p-8 z-2 absolute overflow-y-hidden bg-white ml-4 mt-4">
   <div class="row">
     <strong>Show flights from:</strong>
   </div>
-  <div class="row">
-    <input type="datetime-local" id="begin" style="flex:1">
+  <div class="row mb-4">
+    <input type="datetime-local" id="begin" class="hover:cursor-pointer" style="flex:1">
   </div>
   <div class="row">
-    <strong>to</strong>
+    <strong>To:</strong>
+  </div>
+  <div class="row mb-4">
+    <input type="datetime-local" id="end" class="hover:cursor-pointer" style="flex:1">
   </div>
   <div class="row">
-    <input type="datetime-local" id="end" style="flex:1">
-  </div>
-  <div class="row">
-    <button id="loadBtn">Load Flights</button>
-    <button id="toggleAll">Show All Paths</button>
-    <button id="modeBtn">Mode: Live (2h)</button>
+    <button id="loadBtn" class="px-3 py-2 bg-gray-100 hover:cursor-pointer border-b-2 border-transparent hover:border-blue-500 transition duration-300">Load Flights</button>
+    <button id="toggleAll" class="px-3 py-2 bg-gray-100 hover:cursor-pointer border-b-2 border-transparent hover:border-blue-500 transition duration-300">Show All Paths</button>
+    <button id="modeBtn" class="px-3 py-2 bg-gray-100 hover:cursor-pointer border-b-2 border-transparent hover:border-blue-500 transition duration-300">Mode: Live (2h)</button>
   </div>
   <div class="hint">Tip: Switch to Global (12h) for dense, long-distance coverage.</div>
-  <div id="flight-list"></div>
+  <div id="flight-list" class="overflow-y-scroll"></div>
 </div>
 <script src="index.js"></script>
 </body>

@@ -60,7 +60,6 @@ async function add_new_path(survey_id, path_data) {
         }
         db.run("commit");
     });
-    console.log("Successfully added", path_data.length, "new paths to", survey_id);
 }
 
 async function fetch_studies_from_db() {

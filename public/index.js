@@ -49,8 +49,6 @@ async function load_points() {
 (async () => {
     await Promise.all([map_ready(map), load_points()]);
 
-    console.log('loaded:', points_data);
-
     map.addSource('points', {
         type: 'geojson',
         data: points_data,
@@ -372,7 +370,7 @@ async function loadFlights() {
             return;
         }
 
-        listDiv.innerHTML = "<strong>Flights:</strong><ul>" +
+        listDiv.innerHTML = "<strong class='mb-2'>Flights:</strong><ul>" +
             flights.map(f =>
                 `<li>
           <a class="route-link" onclick="drawRoute('${f.dep}','${f.arr}','${f.callsign}')">
