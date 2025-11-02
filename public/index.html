@@ -1,26 +1,363 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Free Bird</title>
-    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
-    <link href="https://api.mapbox.com/mapbox-gl-js/v3.16.0/mapbox-gl.css" rel="stylesheet">
-    <script src="https://api.mapbox.com/mapbox-gl-js/v3.16.0/mapbox-gl.js"></script>
-    <style>
-        body { margin: 0; padding: 0; }
-        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-    </style>
+<meta charset="UTF-8">
+<title>Global Flight Path Explorer</title>
+<meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.16.0/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.16.0/mapbox-gl.js"></script>
+<style>
+  body { margin: 0; padding: 0; }
+  #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+  #controls {
+    position: absolute; top: 10px; left: 10px; background: #fff; padding: 12px;
+    z-index: 2; border-radius: 8px; box-shadow: 2px 2px 10px rgba(0,0,0,0.2);
+    width: 360px; max-height: 92vh; overflow-y: auto; font-family: system-ui, sans-serif;
+  }
+  #flight-list { margin-top: 12px; }
+  .route-link { cursor: pointer; color: #0a66c2; text-decoration: underline; }
+  #toggleAll, #loadBtn, #modeBtn { margin-top: 10px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .hint { color: #666; font-size: 12px; margin-top: 6px; }
+</style>
 </head>
 <body>
 <div id="map"></div>
-<script>
-    mapboxgl.accessToken = 'pk.eyJ1IjoiZWRyYXRuZXIiLCJhIjoiY21oZ2IzdThuMGRyZDJrczNiZzhmZDR4ayJ9.KaVNTex49istqKLCQPdBUw';
-    const map = new mapboxgl.Map({
-        container: 'map', // container ID
-        center: [-74.5, 40], // starting position [lng, lat]. Note that lat must be set between -90 and 90
-        zoom: 9 // starting zoom
-    });
-</script>
+<div id="controls">
+  <div class="row">
+    <strong>Show flights from:</strong>
+  </div>
+  <div class="row">
+    <input type="datetime-local" id="begin" style="flex:1">
+  </div>
+  <div class="row">
+    <strong>to</strong>
+  </div>
+  <div class="row">
+    <input type="datetime-local" id="end" style="flex:1">
+  </div>
+  <div class="row">
+    <button id="loadBtn">Load Flights</button>
+    <button id="toggleAll">Show All Paths</button>
+    <button id="modeBtn">Mode: Live (2h)</button>
+  </div>
+  <div class="hint">Tip: Switch to Global (12h) for dense, long-distance coverage.</div>
+  <div id="flight-list"></div>
+</div>
 
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoiZWRyYXRuZXIiLCJhIjoiY21oZ2IzdThuMGRyZDJrczNiZzhmZDR4ayJ9.KaVNTex49istqKLCQPdBUw';
+
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/dark-v11',
+  center: [10, 30],
+  zoom: 2
+});
+
+let airports = {};
+let flights = [];
+let routeLayers = [];
+let allPathsShown = false;
+let globalMode = false; // false = Live (2h), true = Global (12h)
+
+const DENSITY_SOURCE_ID = "density";
+const DENSITY_LAYER_ID = "density";
+const LINE_SOURCE_ID = "flight-lines";
+const LINE_LAYER_ID = "flight-lines";
+const AIRPORT_SOURCE_ID = "airport-markers";
+const AIRPORT_LAYER_ID = "airport-markers";
+const AIRPORT_LABEL_LAYER_ID = "airport-labels";
+
+// === Load airports and add markers ===
+async function loadAirports() {
+  const res = await fetch("/airports");
+  airports = await res.json();
+
+  const features = Object.entries(airports).map(([code, coords]) => ({
+    type: "Feature",
+    properties: { code },
+    geometry: { type: "Point", coordinates: [coords.lon, coords.lat] }
+  }));
+
+  if (map.getSource(AIRPORT_SOURCE_ID)) {
+    if (map.getLayer(AIRPORT_LAYER_ID)) map.removeLayer(AIRPORT_LAYER_ID);
+    if (map.getLayer(AIRPORT_LABEL_LAYER_ID)) map.removeLayer(AIRPORT_LABEL_LAYER_ID);
+    map.removeSource(AIRPORT_SOURCE_ID);
+  }
+
+  map.addSource(AIRPORT_SOURCE_ID, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features }
+  });
+
+  map.addLayer({
+    id: AIRPORT_LAYER_ID,
+    type: "circle",
+    source: AIRPORT_SOURCE_ID,
+    paint: {
+      "circle-radius": 4,
+      "circle-color": "#00ffcc",
+      "circle-stroke-width": 1,
+      "circle-stroke-color": "#003333"
+    }
+  });
+
+  map.addLayer({
+    id: AIRPORT_LABEL_LAYER_ID,
+    type: "symbol",
+    source: AIRPORT_SOURCE_ID,
+    layout: {
+      "text-field": ["get", "code"],
+      "text-size": 10,
+      "text-offset": [0, 1.2],
+      "text-allow-overlap": false
+    },
+    paint: { "text-color": "#00ffcc" }
+  });
+}
+
+// === Build density grid (choropleth, single-hue red, smoother) ===
+function buildDensityGrid(flights) {
+  const cellSize = 1; // degrees — finer for smoother blending
+  const grid = {};
+
+  flights.forEach(f => {
+    const dep = airports[f.dep];
+    const arr = airports[f.arr];
+    if (!dep || !arr) return;
+
+    // Emphasize hubs
+    [dep, arr].forEach(pt => {
+      const x = Math.floor(pt.lon / cellSize) * cellSize;
+      const y = Math.floor(pt.lat / cellSize) * cellSize;
+      const key = `${x},${y}`;
+      grid[key] = (grid[key] || 0) + 2;
+    });
+
+    // Lightly spread density along route
+    const samples = 12;
+    for (let i = 1; i < samples; i++) {
+      const t = i / samples;
+      const lon = dep.lon * (1 - t) + arr.lon * t;
+      const lat = dep.lat * (1 - t) + arr.lat * t;
+      const x = Math.floor(lon / cellSize) * cellSize;
+      const y = Math.floor(lat / cellSize) * cellSize;
+      const key = `${x},${y}`;
+      grid[key] = (grid[key] || 0) + 1;
+    }
+  });
+
+  const features = Object.entries(grid).map(([key, count]) => {
+    const [x, y] = key.split(",").map(Number);
+    return {
+      type: "Feature",
+      properties: { count },
+      geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [x, y],
+          [x + cellSize, y],
+          [x + cellSize, y + cellSize],
+          [x, y + cellSize],
+          [x, y]
+        ]]
+      }
+    };
+  });
+
+  return { type: "FeatureCollection", features };
+}
+
+// === Clear routes and density layers ===
+function clearRoutes() {
+  routeLayers.forEach(routeId => {
+    if (map.getLayer(routeId)) map.removeLayer(routeId);
+    if (map.getSource(routeId)) map.removeSource(routeId);
+  });
+  routeLayers = [];
+
+  [DENSITY_LAYER_ID, LINE_LAYER_ID].forEach(id => { if (map.getLayer(id)) map.removeLayer(id); });
+  [DENSITY_SOURCE_ID, LINE_SOURCE_ID].forEach(id => { if (map.getSource(id)) map.removeSource(id); });
+}
+
+// === Show all routes with density grid + line gradient ===
+function showAllRoutes() {
+  clearRoutes();
+
+  // Land-based density gradient
+  const densityGeoJSON = buildDensityGrid(flights);
+  map.addSource(DENSITY_SOURCE_ID, { type: "geojson", data: densityGeoJSON });
+  map.addLayer({
+    id: DENSITY_LAYER_ID,
+    type: "fill",
+    source: DENSITY_SOURCE_ID,
+    paint: {
+      "fill-color": [
+        "interpolate",
+        ["linear"],
+        ["get", "count"],
+        1,  "rgba(255,230,230,0.35)",  // very light red
+        5,  "rgba(255,180,180,0.55)",  // light red
+        12, "rgba(255,120,120,0.72)",  // medium red
+        24, "rgba(210,60,60,0.88)",    // stronger red
+        48, "rgba(140,0,0,1.0)"        // dark red core
+      ],
+      "fill-opacity": [
+        "interpolate", ["linear"], ["zoom"],
+        2, 0.38,
+        4, 0.52,
+        6, 0.66
+      ]
+    }
+  });
+
+  // Continuous line-gradient routes on top
+  const lineFeatures = flights.map(f => {
+    const dep = airports[f.dep];
+    const arr = airports[f.arr];
+    if (!dep || !arr) return null;
+    return {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [[dep.lon, dep.lat], [arr.lon, arr.lat]] }
+    };
+  }).filter(Boolean);
+
+  if (lineFeatures.length > 0) {
+    map.addSource(LINE_SOURCE_ID, {
+      type: "geojson",
+      lineMetrics: true,
+      data: { type: "FeatureCollection", features: lineFeatures }
+    });
+    map.addLayer({
+      id: LINE_LAYER_ID,
+      type: "line",
+      source: LINE_SOURCE_ID,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: {
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          2, 1.1,
+          5, 1.8,
+          9, 2.6
+        ],
+        "line-gradient": [
+          "interpolate",
+          ["linear"],
+          ["line-progress"],
+          0, "rgba(255,200,200,0.10)",
+          0.5, "rgba(210,60,60,0.55)",
+          1, "rgba(140,0,0,0.90)"
+        ]
+      }
+    });
+  }
+}
+
+// === Draw single route (for list clicks) ===
+function drawRoute(depCode, arrCode, callsign, layerId) {
+  const dep = airports[depCode];
+  const arr = airports[arrCode];
+  if (!dep || !arr) return;
+
+  layerId = layerId || `${depCode}-${arrCode}-${callsign || 'route'}-route`;
+
+  if (map.getLayer(layerId)) map.removeLayer(layerId);
+  if (map.getSource(layerId)) map.removeSource(layerId);
+
+  map.addSource(layerId, {
+    type: "geojson",
+    data: {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: [[dep.lon, dep.lat], [arr.lon, arr.lat]] }
+    }
+  });
+  map.addLayer({
+    id: layerId,
+    type: "line",
+    source: layerId,
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: { "line-color": "#00aaff", "line-width": 3 }
+  });
+  routeLayers.push(layerId);
+}
+
+// === Load flights (supports Live 2h and Global 12h) ===
+async function loadFlights() {
+  clearRoutes();
+  allPathsShown = false;
+  document.getElementById("toggleAll").textContent = "Show All Paths";
+
+  const beginVal = document.getElementById("begin").value;
+  const endVal = document.getElementById("end").value;
+  const begin = Math.floor(new Date(beginVal).getTime() / 1000);
+  const end = Math.floor(new Date(endVal).getTime() / 1000);
+
+  const listDiv = document.getElementById("flight-list");
+  listDiv.innerHTML = "<em>Loading...</em>";
+
+  try {
+    // Server will internally slice into 2h chunks between begin/end
+    const res = await fetch(`/flights/all?begin=${begin}&end=${end}`);
+    flights = await res.json();
+
+    if (flights.error) {
+      listDiv.innerHTML = "<span style='color:red'>" + flights.error + "</span>";
+      return;
+    }
+    if (!Array.isArray(flights) || flights.length === 0) {
+      listDiv.innerHTML = "<em>No flights found in this interval.</em>";
+      return;
+    }
+
+    listDiv.innerHTML = "<strong>Flights:</strong><ul>" +
+      flights.map(f =>
+        `<li>
+          <a class="route-link" onclick="drawRoute('${f.dep}','${f.arr}','${f.callsign}')">
+            ${f.callsign || '[no callsign]'} (${f.dep} → ${f.arr})
+          </a>
+        </li>`
+      ).join('') +
+      "</ul>";
+  } catch (err) {
+    console.error(err);
+    listDiv.innerHTML = "<span style='color:red'>Error loading flights.</span>";
+  }
+}
+
+// === Toggle all flight paths ===
+document.getElementById("toggleAll").onclick = function () {
+  if (!allPathsShown) {
+    showAllRoutes();
+    this.textContent = "Hide All Paths";
+    allPathsShown = true;
+  } else {
+    clearRoutes();
+    this.textContent = "Show All Paths";
+    allPathsShown = false;
+  }
+};
+
+// === Toggle mode (Live 2h vs Global 12h) ===
+document.getElementById("modeBtn").onclick = function () {
+  globalMode = !globalMode;
+  const now = new Date();
+  const hours = globalMode ? 12 : 2;
+  const start = new Date(now.getTime() - hours * 60 * 60 * 1000);
+  document.getElementById("end").value = now.toISOString().slice(0,16);
+  document.getElementById("begin").value = start.toISOString().slice(0,16);
+  this.textContent = `Mode: ${globalMode ? "Global (12h)" : "Live (2h)"}`;
+};
+
+// === Default time interval (Live 2h) and init ===
+window.onload = async () => {
+  await loadAirports();
+  const now = new Date();
+  const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+  document.getElementById("end").value = now.toISOString().slice(0,16);
+  document.getElementById("begin").value = twoHoursAgo.toISOString().slice(0,16);
+  document.getElementById("loadBtn").onclick = loadFlights;
+};
+</script>
 </body>
 </html>
