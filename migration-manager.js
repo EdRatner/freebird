@@ -145,7 +145,7 @@ async function start_scheduled_downloads(api_token) {
     await download_new_movement(api_token);
 
     // Set a timer to call this function again after the interval duration
-    setTimeout(() => start_scheduled_downloads(api_token), 30000);
+    //setTimeout(() => start_scheduled_downloads(api_token), 30000);
 }
 
 function get_all_downloaded_studies() {

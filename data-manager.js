@@ -135,8 +135,6 @@ function next_undownloaded_study() {
     for (const study_id in studies_stored) {
         if (studies_stored[study_id].downloaded === 0) {
             return study_id;
-        } else {
-            console.log(studies_stored[study_id]);
         }
     }
     return -1;
@@ -153,8 +151,8 @@ function get_all_downloaded_studies() {
 }
 
 function get_all_movement_data(survey_id) {
-    console.log(paths)
-    return paths[survey_id];
+    console.log(paths[survey_id], survey_id);
+    return paths[`${survey_id}`];
 }
 
 init_table();
