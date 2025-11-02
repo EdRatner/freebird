@@ -1,2 +1,4 @@
 .idea/
 node_modules/
+movebank-credentials.js
+storage.db

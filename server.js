@@ -33,6 +33,10 @@ async function loadAirportsFromFile() {
     }
   }
 
+const migration_manager = require("./migration-manager.js");
+
+const http = require("http");
+const server = http.createServer(app);
   console.log(`✅ Loaded ${Object.keys(airports).length} airports`);
 }
 
@@ -42,6 +46,17 @@ app.use(express.static('./public'));
 let cachedToken = null;
 let tokenExpiry = 0;
 
+app.get("/api/surveys/", (req, res) => {
+    res.json(migration_manager.get_all_downloaded_studies());
+})
+
+app.get("/api/movement", (req, res) => {
+    res.json(migration_manager.get_all_movement_data(req.query.survey_id) || []);
+})
+
+server.listen(port, () => {
+    console.log("Server Initiated.");
+})
 async function getAccessToken() {
   const now = Date.now();
   if (cachedToken && tokenExpiry > now + 60 * 1000) {
