@@ -148,5 +148,13 @@ async function start_scheduled_downloads(api_token) {
     setTimeout(() => start_scheduled_downloads(api_token), 30000);
 }
 
+function get_all_downloaded_studies() {
+    return database.get_all_downloaded_studies();
+}
 
-module.exports = {get_auth_token, get_studies, get_movement_path};
+function get_all_movement_data(survey_id) {
+    return database.get_all_movement_data(survey_id);
+}
+
+
+module.exports = {get_auth_token, get_studies, get_movement_path, get_all_downloaded_studies, get_all_movement_data};

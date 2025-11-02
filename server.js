@@ -11,6 +11,14 @@ const port = 3000
 
 app.use(express.static('./public/'));
 
+app.get("/api/surveys/", (req, res) => {
+    res.json(migration_manager.get_all_downloaded_studies());
+})
+
+app.get("/api/movement", (req, res) => {
+    res.json(migration_manager.get_all_movement_data(req.query.survey_id) || []);
+})
+
 server.listen(port, () => {
     console.log("Server Initiated.");
 })

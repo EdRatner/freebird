@@ -89,13 +89,16 @@ async function fetch_paths_from_db() {
 
     db_fetch(statement).then(records => {
         for (const record of records) {
+            const new_record = {
+                id: record.id,
+                epoch_time: parseInt(record.epoch_time),
+                latitude: parseFloat(record.latitude),
+                longitude: parseFloat(record.longitude)
+            };
             if (paths[record.study_id] === undefined) {
-                paths[record.study_id] = [{
-                    id: record.id,
-                    epoch_time: parseInt(record.epoch_time),
-                    latitude: parseFloat(record.latitude),
-                    longitude: parseFloat(record.longitude)
-                }]
+                paths[record.study_id] = [new_record]
+            } else {
+                paths[record.study_id].push(new_record)
             }
         }
     })
@@ -139,10 +142,22 @@ function next_undownloaded_study() {
     return -1;
 }
 
-function add_movement(study_id, epoch_time, lat, long) {
+function get_all_downloaded_studies() {
+    const studies = []
+    Object.entries(studies_stored).forEach(
+        ([key, value]) => {
+            if (value.downloaded === 1) studies.push(key);
+        }
+    );
+    return studies;
+}
 
+function get_all_movement_data(survey_id) {
+    console.log(paths)
+    return paths[survey_id];
 }
 
 init_table();
 
-module.exports = {add_movement, add_study, add_and_check_studies, fetch_studies_from_db, next_undownloaded_study, mark_as_downloaded, add_new_path, fetch_paths_from_db};
+module.exports = {add_study, add_and_check_studies, fetch_studies_from_db, next_undownloaded_study, mark_as_downloaded,
+    add_new_path, fetch_paths_from_db, get_all_downloaded_studies, get_all_movement_data};
