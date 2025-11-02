@@ -2,12 +2,16 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
+const migration_manager = require("./migration-manager.js");
 const app = express();
 const port = 3000;
 
+const http = require("http");
+const server = http.createServer(app);
+
 // === OpenSky API credentials ===
-const CLIENT_ID = "mayon.gupta@gmail.com-api-client";
-const CLIENT_SECRET = "4870rUhhCqOhn863bnkSyXyV1xfFVpLR";
+const CLIENT_ID = "edratner-api-client";
+const CLIENT_SECRET = "VMgQRqJGbqobrX2tkLxity6pPVGEtMS1";
 
 // === Dynamic airport dictionary ===
 const airports = {}; // Will be populated from airports.dat
@@ -32,8 +36,6 @@ async function loadAirportsFromFile() {
       airports[icao] = { lat, lon };
     }
   }
-
-const migration_manager = require("./migration-manager.js");
 
 const http = require("http");
 const server = http.createServer(app);
@@ -137,10 +139,4 @@ app.get("/airports", (req, res) => {
 });
 
 // === Start server after loading airports ===
-loadAirportsFromFile().then(() => {
-  app.listen(port, () => {
-    console.log(`🚀 Server running at http://localhost:${port}`);
-  });
-}).catch(err => {
-  console.error("❌ Failed to load airports:", err);
-});
+loadAirportsFromFile();
