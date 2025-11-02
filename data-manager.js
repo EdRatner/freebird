@@ -28,7 +28,7 @@ function db_fetch(sql, params = []) {
 async function init_table() {
     // 1. Create a table
     const create_movement_table = 'CREATE TABLE IF NOT EXISTS movement_data (\n' +
-        '    id INTEGER PRIMARY KEY,\n' +
+        '    id INTEGER PRIMARY KEY AUTOINCREMENT,\n' +
         '    study_id INTEGER,\n' +
         '    epoch_time INTEGER NOT NULL,\n' +
         '    latitude REAL,\n' +
@@ -50,8 +50,17 @@ async function init_table() {
     await run_async(create_study_table, []);
 }
 
-async function init_paths() {
-
+async function add_new_path(survey_id, path_data) {
+    paths[survey_id] = path_data;
+    db.serialize(function() {
+        db.run("begin transaction");
+        for (let i = 0; i < path_data.length; i++) {
+            const statement = "INSERT INTO movement_data (study_id, epoch_time, latitude, longitude) VALUES (?, ?, ?, ?);"
+            db.run(statement, survey_id, path_data[i].timestamp, path_data[i].location_lat, path_data[i].location_long);
+        }
+        db.run("commit");
+    });
+    console.log("Successfully added", path_data.length, "new paths to", survey_id);
 }
 
 async function fetch_studies_from_db() {
@@ -65,13 +74,31 @@ async function fetch_studies_from_db() {
                 last_deployed_time: parseInt(record.last_deployed_time), // Convert to Integer
                 number_of_animals: parseInt(record.number_of_animals),
                 contact_name: record.contact_name,
-                principal_investigator: record.principal_investigator
+                principal_investigator: record.principal_investigator,
+                downloaded: record.downloaded
             };
         }
     }).catch(err => {
         console.error("Error fetching data from database:", err.message);
         return undefined;
     });
+}
+
+async function fetch_paths_from_db() {
+    const statement = "SELECT * FROM movement_data";
+
+    db_fetch(statement).then(records => {
+        for (const record of records) {
+            if (paths[record.study_id] === undefined) {
+                paths[record.study_id] = [{
+                    id: record.id,
+                    epoch_time: parseInt(record.epoch_time),
+                    latitude: parseFloat(record.latitude),
+                    longitude: parseFloat(record.longitude)
+                }]
+            }
+        }
+    })
 }
 
 async function add_study(id, species, last_deployed_time, number_of_animals, contact_name, principal_investigator) {
@@ -96,10 +123,26 @@ async function add_and_check_studies(studies) {
     });
 }
 
+async function mark_as_downloaded(study_id) {
+    studies_stored[study_id].downloaded = 1;
+    await run_async("UPDATE studies SET downloaded = 1 WHERE id = ?;", [study_id]);
+}
+
+function next_undownloaded_study() {
+    for (const study_id in studies_stored) {
+        if (studies_stored[study_id].downloaded === 0) {
+            return study_id;
+        } else {
+            console.log(studies_stored[study_id]);
+        }
+    }
+    return -1;
+}
+
 function add_movement(study_id, epoch_time, lat, long) {
 
 }
 
 init_table();
 
-module.exports = {add_movement, add_study, add_and_check_studies, fetch_studies_from_db};
+module.exports = {add_movement, add_study, add_and_check_studies, fetch_studies_from_db, next_undownloaded_study, mark_as_downloaded, add_new_path, fetch_paths_from_db};
